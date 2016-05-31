@@ -1,6 +1,8 @@
 // Nokia 5110 LCD-Display (84x48 Bildpunkte)
 // Setup to controll fan on rd350 -85 (works on different temperature sensors but need to change
 // THERMISTORNOMINAL AND BCOEFFICIENT, (SERIESRESISTOR and ADCREF/VIN)
+// Using Arduino Nano and 5110 display.
+
 #include <SPI.h>
 
 #include <Adafruit_GFX.h>
@@ -16,7 +18,7 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(7, 6, 5, 4, 3);
 //Contrast and brightness
 #define CONTRAST 40
 #define LEDPIN 9
-#define BRIGHTNESS 50
+#define BRIGHTNESS 80 //0-100%
 
 // which analog pin to connect
 #define THERMISTORPIN A0         
@@ -26,12 +28,13 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(7, 6, 5, 4, 3);
 #define TEMPERATURENOMINAL 25   
 // how many samples to take and average, more takes longer
 // but is more 'smooth'
-#define NUMSAMPLES 20
+#define NUMSAMPLES 10
 // The beta coefficient of the thermistor (usually 3000-4000)
 #define BCOEFFICIENT 4150
 // the value of the 'other' resistor
 #define SERIESRESISTOR 4700    
 int samples[NUMSAMPLES];
+int samples2[NUMSAMPLES];
 
 // Values for voltage divider
 #define ADCREF 3.3
@@ -41,6 +44,9 @@ int samples[NUMSAMPLES];
 #define RELAYPIN 2
 #define FANON 102
 #define FANOFF 98
+
+// DEBUG
+#define DEBUG false
 
 
 float maxTemp=-50.0;
@@ -68,41 +74,42 @@ void setup()   {
 
 void loop() {
   uint8_t i;
-  float average;
- 
-  // take N samples in a row, with a slight delay
-  for (i=0; i< NUMSAMPLES; i++) {
-   samples[i] = analogRead(THERMISTORPIN);
-   delay(10);
+  uint8_t j;
+  float average = 0;
+  float average2 = 0;
+
+  for (i=0; i<NUMSAMPLES; i++) {
+    // take N samples in a row, with a slight delay
+    for (j=0; j< NUMSAMPLES; j++) {
+     samples2[j] = analogRead(THERMISTORPIN);
+     delay(10);
+    }
+   
+    // average all the samples out
+    for (j=0; j< NUMSAMPLES; j++) {
+     average2 += samples2[j];
+    }
+    average2 /= NUMSAMPLES;
+    samples[i] = average2;
   }
- 
-  // average all the samples out
-  average = 0;
   for (i=0; i< NUMSAMPLES; i++) {
      average += samples[i];
   }
   average /= NUMSAMPLES;
   
-  display.clearDisplay();
-  display.setTextColor(BLACK);
-  display.print("ADC:      ");
-  display.println(average,0);
+  // convert the value to voltag
+  float voltage = average;
+  voltage = ADCREF / 1023 * voltage;
 
-  // convert the value to voltage
-  average = ADCREF / 1023 * average;
-  display.print("Voltage: ");
-  display.println(average,2);
-  
   // convert the value to resistance
-  average = VIN / average - 1;
-  average = SERIESRESISTOR / average;
-  display.print("Ohm:     ");
-  display.println(average,0);
+  float ohm = voltage;
+  ohm = VIN / ohm - 1;
+  ohm = SERIESRESISTOR / ohm;
 
-  if (average == 0) average = 1;
+  float steinhart = ohm;
+  if (steinhart == 0) steinhart = 1;
 
-  float steinhart;
-  steinhart = average / THERMISTORNOMINAL;     // (R/Ro)
+  steinhart = steinhart / THERMISTORNOMINAL;     // (R/Ro)
   steinhart = log(steinhart);                  // ln(R/Ro)
   steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
   steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
@@ -112,19 +119,41 @@ void loop() {
   if (steinhart > FANON) digitalWrite(RELAYPIN, HIGH);
   else if (steinhart < FANOFF) digitalWrite(RELAYPIN, LOW);
 
-  display.print("Temp: ");
-  display.print(steinhart,1);
-  display.println(" C");
-
   if (steinhart > maxTemp) maxTemp = steinhart; 
   
-  display.print("Max:  ");
-  display.print(maxTemp,1);
-  display.println(" C");
+  if (DEBUG) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(BLACK);
+    
+    display.print("ADC:      ");
+    display.println(average,0);
   
+    display.print("Voltage: ");
+    display.println(voltage,2);
+    
+    display.print("Ohm:     ");
+    display.println(ohm,0);
+
+    display.print("Temp: ");
+    display.print(steinhart,1);
+    display.println(" C");
+
+    display.print("Max:  ");
+    display.print(maxTemp,1);
+    display.println(" C");
+  }
+  else {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(BLACK);
+
+    display.println(steinhart,1);
+
+    display.print("M:");
+    display.println(maxTemp,1);
+  }
   display.display();
- 
-  delay(1000);
 }
 
 void welcomeText(void){
