@@ -7,6 +7,10 @@
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_PCD8544.h>
+#include <AnalogSmooth.h>
+
+AnalogSmooth as = AnalogSmooth(50);
+
 
 // D7 - Serial clock out (CLK oder SCLK)
 // D6 - Serial data out (DIN)
@@ -26,15 +30,15 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(7, 6, 5, 4, 3);
 #define THERMISTORNOMINAL 455      
 // temp. for nominal resistance (almost always 25 C)
 #define TEMPERATURENOMINAL 25   
-// how many samples to take and average, more takes longer
-// but is more 'smooth'
-#define NUMSAMPLES 10
 // The beta coefficient of the thermistor (usually 3000-4000)
 #define BCOEFFICIENT 4150
 // the value of the 'other' resistor
 #define SERIESRESISTOR 4700    
-int samples[NUMSAMPLES];
-int samples2[NUMSAMPLES];
+// how many samples to take and average, more takes longer
+// but is more 'smooth'
+// #define NUMSAMPLES 10
+// int samples[NUMSAMPLES];
+//  int samples2[NUMSAMPLES];
 
 // Values for voltage divider
 #define ADCREF 3.3
@@ -73,6 +77,8 @@ void setup()   {
 }
 
 void loop() {
+
+  /*
   uint8_t i;
   uint8_t j;
   float average = 0;
@@ -96,6 +102,9 @@ void loop() {
      average += samples[i];
   }
   average /= NUMSAMPLES;
+  */
+
+  float average = as.smooth(analogRead(THERMISTORPIN));
   
   // convert the value to voltag
   float voltage = average;
