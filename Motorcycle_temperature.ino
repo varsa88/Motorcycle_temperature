@@ -9,7 +9,7 @@
 #include <Adafruit_PCD8544.h>
 #include <AnalogSmooth.h>
 
-AnalogSmooth as = AnalogSmooth(50);
+AnalogSmooth as = AnalogSmooth(20);
 
 
 // D7 - Serial clock out (CLK oder SCLK)
@@ -20,9 +20,9 @@ AnalogSmooth as = AnalogSmooth(50);
 Adafruit_PCD8544 display = Adafruit_PCD8544(7, 6, 5, 4, 3);
 
 //Contrast and brightness
-#define CONTRAST 40
+#define CONTRAST 50
 #define LEDPIN 9
-#define BRIGHTNESS 80 //0-100%
+#define BRIGHTNESS 90 //0-100%
 
 // which analog pin to connect
 #define THERMISTORPIN A0         
@@ -52,8 +52,11 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(7, 6, 5, 4, 3);
 // DEBUG
 #define DEBUG false
 
-
+long int AdcReads=0;
+long int ErrorReads=0;
 float maxTemp=-50.0;
+float minRawTemp = 100.0;
+float maxRawTemp = -50.0;
 
 void setup()   {
 
@@ -77,66 +80,34 @@ void setup()   {
 }
 
 void loop() {
-
-  /*
-  uint8_t i;
-  uint8_t j;
-  float average = 0;
-  float average2 = 0;
-
-  for (i=0; i<NUMSAMPLES; i++) {
-    // take N samples in a row, with a slight delay
-    for (j=0; j< NUMSAMPLES; j++) {
-     samples2[j] = analogRead(THERMISTORPIN);
-     delay(10);
-    }
-   
-    // average all the samples out
-    for (j=0; j< NUMSAMPLES; j++) {
-     average2 += samples2[j];
-    }
-    average2 /= NUMSAMPLES;
-    samples[i] = average2;
-  }
-  for (i=0; i< NUMSAMPLES; i++) {
-     average += samples[i];
-  }
-  average /= NUMSAMPLES;
-  */
-
-  float average = as.smooth(analogRead(THERMISTORPIN));
   
-  // convert the value to voltag
-  float voltage = average;
-  voltage = ADCREF / 1023 * voltage;
-
-  // convert the value to resistance
-  float ohm = voltage;
-  ohm = VIN / ohm - 1;
-  ohm = SERIESRESISTOR / ohm;
-
-  float steinhart = ohm;
-  if (steinhart == 0) steinhart = 1;
-
-  steinhart = steinhart / THERMISTORNOMINAL;     // (R/Ro)
-  steinhart = log(steinhart);                  // ln(R/Ro)
-  steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
-  steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
-  steinhart = 1.0 / steinhart;                 // Invert
-  steinhart -= 273.15;                         // convert to C
-
-  if (steinhart > FANON) digitalWrite(RELAYPIN, HIGH);
-  else if (steinhart < FANOFF) digitalWrite(RELAYPIN, LOW);
-
-  if (steinhart > maxTemp) maxTemp = steinhart; 
+  int raw = analogRead(THERMISTORPIN);
+  AdcReads++;
   
+  float voltage,ohm,rawTemp = calcRawTemp(raw);
+  if (rawTemp<-20||rawTemp>150) {
+    ErrorReads++;
+    return; //disregard value and end loop if out of bounds
+  }
+  // Set new min/max
+  if (rawTemp < minRawTemp) minRawTemp = rawTemp;
+  else if (rawTemp > maxRawTemp) maxRawTemp = rawTemp; 
+
+  // Smooth the temperature
+  float temperature = as.smooth(rawTemp);
+
+  if (temperature > FANON) digitalWrite(RELAYPIN, HIGH);
+  else if (temperature < FANOFF) digitalWrite(RELAYPIN, LOW);
+
+  if (temperature > maxTemp) maxTemp = temperature; 
+
+  display.clearDisplay();
+  display.setTextColor(BLACK);
   if (DEBUG) {
-    display.clearDisplay();
     display.setTextSize(1);
-    display.setTextColor(BLACK);
     
     display.print("ADC:      ");
-    display.println(average,0);
+    display.println(raw,0);
   
     display.print("Voltage: ");
     display.println(voltage,2);
@@ -145,7 +116,7 @@ void loop() {
     display.println(ohm,0);
 
     display.print("Temp: ");
-    display.print(steinhart,1);
+    display.print(temperature,1);
     display.println(" C");
 
     display.print("Max:  ");
@@ -153,16 +124,45 @@ void loop() {
     display.println(" C");
   }
   else {
-    display.clearDisplay();
     display.setTextSize(2);
-    display.setTextColor(BLACK);
 
-    display.println(steinhart,1);
+    display.print("  ");
+    display.println(temperature,0);
 
-    display.print("M:");
-    display.println(maxTemp,1);
+    display.print("M ");
+    display.println(maxTemp,0);
+
+    display.setTextSize(1);
+    display.print(minRawTemp,1); display.print(":"); display.println(maxRawTemp,1);
+    display.print(AdcReads); display.print("/"); display.println(ErrorReads);
   }
   display.display();
+}
+
+float steinhart(float steinhart){
+  if (steinhart == 0) steinhart = 1;
+
+  steinhart = steinhart / THERMISTORNOMINAL;     // (R/Ro)
+  steinhart = log(steinhart);                  // ln(R/Ro)
+  steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
+  steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
+  steinhart = 1.0 / steinhart;                 // Invert
+  steinhart -= 273.15;                         // convert to C
+  return steinhart;
+}
+
+float calcRawTemp(int raw){
+  // convert the value to voltag
+  float voltage = raw;
+  voltage = ADCREF / 1023 * voltage;
+
+  // convert the value to resistance
+  float ohm = voltage;
+  ohm = VIN / ohm - 1;
+  ohm = SERIESRESISTOR / ohm;
+
+  // Calculate temperature from resistance
+  return voltage,ohm,steinhart(ohm);
 }
 
 void welcomeText(void){
